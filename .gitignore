@@ -1,0 +1,20 @@
+# Proceso de compilación de ESP-IDF y CMake
+build/
+sdkconfig.old
+sdkconfig.ci
+managed_components/
+dependencies.lock
+
+# Archivos de configuración de CMake y herramientas
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeLists.txt.user
+
+# Archivos temporales de editores y SO
+*.swp
+*~
+.DS_Store
+.vscode/
+.idea/
+.clang-format
