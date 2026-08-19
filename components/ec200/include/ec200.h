@@ -12,13 +12,16 @@
 #define EN_MDM GPIO_NUM_14
 #define PWR_KEY GPIO_NUM_13
 
+#define EC200_OK 0
+#define EC200_ERROR -1
+
 typedef struct {
     bool modem_communication;
     bool sim_detect;
 } modem_state_t;
 
 // Firma limpia con 2 parámetros
-bool send_mdm(const char *cmd, const char *expected);
+int send_mdm(const char *cmd, char *response, size_t response_size);
 bool modem_init(void);
 bool modem_check_sim(void);
 
