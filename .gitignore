@@ -15,6 +15,5 @@ CMakeLists.txt.user
 *.swp
 *~
 .DS_Store
-.vscode/
 .idea/
 .clang-format
