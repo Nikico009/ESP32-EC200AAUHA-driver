@@ -3,53 +3,89 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
-/** @brief HARDWARE_DEFINITIONS */
+#include "driver/gpio.h"
+#include "driver/uart.h"
+
+/** @brief HARDWARE DEFINITIONS */
 #define UART_PORT UART_NUM_1
-#define LED_STA GPIO_NUM_15
-#define LED_AUX GPIO_NUM_25
+
+#define LED_STA   GPIO_NUM_15
+#define LED_AUX   GPIO_NUM_25
+
 #define TXD_MICRO GPIO_NUM_17
 #define RXD_MICRO GPIO_NUM_16
-#define EN_MDM GPIO_NUM_14
-#define PWR_KEY GPIO_NUM_13
+
+#define EN_MDM    GPIO_NUM_14
+#define PWR_KEY   GPIO_NUM_13
+
 
 /** @brief Return codes */
-#define EC200_OK       0
-#define EC200_ERROR   -1
+#define EC200_OK            0
+#define EC200_ERROR        -1
+#define EC200_NO_PAYLOAD   -2
+
 
 /** @brief Maximum number of modem initialization retries */
-#define EC200_RETRIES  10
+#define EC200_RETRIES 10
 
-/** @brief Claro Argentina APN */
+
+/** @brief APNs */
 #define CLARO_APN      "igprs.claro.com.ar"
-
-/** @brief Movistar Argentina APN */
 #define MOVISTAR_APN   "wap.gprs.unifon.com.ar"
-
-/** @brief Personal Argentina APN */
 #define PERSONAL_APN   "internet"
+
+
+/** @brief Buffer sizes */
+#define MAX_TCP_RESPONSE 1024
+#define MAX_TCP_PAYLOAD  256
+#define MAX_CMD          64
 
 
 /**
  * @brief Current EC200 modem state.
  */
 typedef struct {
-    bool modem_communication;
-    bool sim_detect;
+    int modem_communication;
+    int sim_detect;
+    int tcp_socket;
 } modem_state_t;
 
 
 /**
- * @brief Send an AT command to the EC200 modem.
+ * @brief Send an AT command and wait for a short response.
+ *
+ * Intended for simple commands such as:
+ * AT
+ * AT+CPIN?
+ * AT+CEREG?
  *
  * @param cmd Command to send.
- * @param response Buffer where the modem response will be stored.
+ * @param response Buffer where the response will be stored.
  * @param response_size Size of the response buffer.
  *
- * @return EC200_OK if the command was sent and a response was received.
+ * @return EC200_OK on success.
  * @return EC200_ERROR on communication failure or timeout.
  */
-int send_mdm(const char *cmd, char *response, size_t response_size);
+int mdm_send_cmd(const char *cmd, char *response, size_t response_size);
+
+
+/**
+ * @brief Send an AT command and collect its complete response.
+ *
+ * Intended for commands where the modem response may be longer
+ * than the normal short AT response.
+ *
+ * @param cmd Command to send.
+ * @param response Buffer where the response will be stored.
+ * @param response_size Size of the response buffer.
+ * @param timeout_ms Maximum time to wait for the response.
+ *
+ * @return EC200_OK on success.
+ * @return EC200_ERROR on communication failure or timeout.
+ */
+int mdm_request_cmd(const char *cmd, char *response, size_t response_size, uint32_t timeout_ms);
 
 
 /**
@@ -75,10 +111,52 @@ int modem_check_sim(void);
  *
  * @param host Remote hostname or IP address.
  * @param port Remote TCP port.
+ * @param timeout_ms Timeout for socket opening.
  *
  * @return EC200_OK if the socket was opened successfully.
  * @return EC200_ERROR if the connection fails.
  */
-int open_tcp_socket(const char *host, int port);
+int tcp_open_socket(const char *host, int port, uint32_t timeout_ms);
+
+
+/**
+ * @brief Send a raw payload through the TCP socket.
+ *
+ * This function has no knowledge of HTTP or any other protocol.
+ *
+ * @param payload Payload to send.
+ * @param payload_length Payload length in bytes.
+ * @param timeout_ms Timeout for the operation.
+ *
+ * @return EC200_OK if the payload was sent successfully.
+ * @return EC200_ERROR if the transmission fails.
+ */
+int tcp_send_payload(const char *payload, size_t payload_length, uint32_t timeout_ms);
+
+
+/**
+ * @brief Receive raw data from the TCP socket.
+ *
+ * Reads data from the modem TCP receive buffer using AT+QIRD.
+ *
+ * @param buffer Buffer where received data will be stored.
+ * @param buffer_size Size of the receiving buffer.
+ * @param received Number of bytes actually received.
+ * @param timeout_ms Maximum time to wait for data.
+ *
+ * @return EC200_OK if data was received.
+ * @return EC200_NO_PAYLOAD if no data is available.
+ * @return EC200_ERROR on communication or parsing failure.
+ */
+int tcp_receive(void *buffer, size_t buffer_size, size_t *received, uint32_t timeout_ms);
+
+
+/**
+ * @brief Close the TCP socket.
+ *
+ * @return EC200_OK if the socket was closed successfully.
+ * @return EC200_ERROR if the operation fails.
+ */
+int tcp_close_socket(void);
 
 #endif /* EC200_H */
