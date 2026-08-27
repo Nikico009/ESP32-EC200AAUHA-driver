@@ -1,5 +1,5 @@
-#ifndef EC200_H
-#define EC200_H
+#ifndef EC200_TCP_H
+#define EC200_TCP_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -20,28 +20,24 @@
 #define EN_MDM    GPIO_NUM_14
 #define PWR_KEY   GPIO_NUM_13
 
-
 /** @brief Return codes */
-#define EC200_OK            0
-#define EC200_ERROR        -1
-#define EC200_NO_PAYLOAD   -2
-
+#define EC200_OK           0
+#define EC200_ERROR       -1
+#define EC200_NO_PAYLOAD  -2
 
 /** @brief Maximum number of modem initialization retries */
 #define EC200_RETRIES 10
 
-
 /** @brief APNs */
-#define CLARO_APN      "igprs.claro.com.ar"
-#define MOVISTAR_APN   "wap.gprs.unifon.com.ar"
-#define PERSONAL_APN   "internet"
-
+#define CLARO_APN     "igprs.claro.com.ar"
+#define MOVISTAR_APN  "wap.gprs.unifon.com.ar"
+#define PERSONAL_APN  "internet"
 
 /** @brief Buffer sizes */
 #define MAX_TCP_RESPONSE 1024
 #define MAX_TCP_PAYLOAD  256
 #define MAX_CMD          64
-
+#define MAX_AT_RESPONSE  128
 
 /**
  * @brief Current EC200 modem state.
@@ -52,14 +48,8 @@ typedef struct {
     int tcp_socket;
 } modem_state_t;
 
-
 /**
  * @brief Send an AT command and wait for a short response.
- *
- * Intended for simple commands such as:
- * AT
- * AT+CPIN?
- * AT+CEREG?
  *
  * @param cmd Command to send.
  * @param response Buffer where the response will be stored.
@@ -70,12 +60,8 @@ typedef struct {
  */
 int mdm_send_cmd(const char *cmd, char *response, size_t response_size);
 
-
 /**
  * @brief Send an AT command and collect its complete response.
- *
- * Intended for commands where the modem response may be longer
- * than the normal short AT response.
  *
  * @param cmd Command to send.
  * @param response Buffer where the response will be stored.
@@ -87,7 +73,6 @@ int mdm_send_cmd(const char *cmd, char *response, size_t response_size);
  */
 int mdm_request_cmd(const char *cmd, char *response, size_t response_size, uint32_t timeout_ms);
 
-
 /**
  * @brief Power on and initialize the EC200 modem.
  *
@@ -96,15 +81,16 @@ int mdm_request_cmd(const char *cmd, char *response, size_t response_size, uint3
  */
 int modem_init(void);
 
-
 /**
- * @brief Check SIM availability and modem network status.
+ * @brief Check SIM availability and automatically select its APN.
  *
- * @return EC200_OK if the SIM is ready.
- * @return EC200_ERROR if the SIM is unavailable or not ready.
+ * Detects the network reported by the modem and selects the
+ * corresponding APN for Claro, Movistar or Personal.
+ *
+ * @return EC200_OK if the SIM is ready and an APN was selected.
+ * @return EC200_ERROR if the SIM or operator cannot be detected.
  */
 int modem_check_sim(void);
-
 
 /**
  * @brief Open a TCP socket to a remote host.
@@ -118,11 +104,8 @@ int modem_check_sim(void);
  */
 int tcp_open_socket(const char *host, int port, uint32_t timeout_ms);
 
-
 /**
  * @brief Send a raw payload through the TCP socket.
- *
- * This function has no knowledge of HTTP or any other protocol.
  *
  * @param payload Payload to send.
  * @param payload_length Payload length in bytes.
@@ -133,11 +116,8 @@ int tcp_open_socket(const char *host, int port, uint32_t timeout_ms);
  */
 int tcp_send_payload(const char *payload, size_t payload_length, uint32_t timeout_ms);
 
-
 /**
  * @brief Receive raw data from the TCP socket.
- *
- * Reads data from the modem TCP receive buffer using AT+QIRD.
  *
  * @param buffer Buffer where received data will be stored.
  * @param buffer_size Size of the receiving buffer.
@@ -150,7 +130,6 @@ int tcp_send_payload(const char *payload, size_t payload_length, uint32_t timeou
  */
 int tcp_receive(void *buffer, size_t buffer_size, size_t *received, uint32_t timeout_ms);
 
-
 /**
  * @brief Close the TCP socket.
  *
@@ -159,4 +138,4 @@ int tcp_receive(void *buffer, size_t buffer_size, size_t *received, uint32_t tim
  */
 int tcp_close_socket(void);
 
-#endif /* EC200_H */
+#endif /* EC200_TCP_H */
