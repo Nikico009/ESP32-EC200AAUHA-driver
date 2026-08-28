@@ -1,73 +1,77 @@
 #include <stdio.h>
-#include <stdbool.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
+#include "EC200_UART.h"
 #include "EC200_TCP.h"
 #include "pins_init.h"
 
 
-#define TCP_OPEN_TIMEOUT_S       10
-#define TCP_PAYLOAD_TIMEOUT_S     5
-#define TCP_RECEIVE_TIMEOUT_S     5
+#define TCP_OPEN_TIMEOUT_MS       10000
+#define TCP_SEND_TIMEOUT_MS        5000
+#define TCP_RECEIVE_TIMEOUT_MS     5000
 
 
 void app_main(void)
 {
-    bool led_state = false;
-
-    modem_state_t modem_state = {
-        .modem_communication = 0,
-        .sim_detect = 0,
-        .tcp_socket = 0
-    };
-
-
-    /* ------------------------------ HARDWARE ------------------------------ */
-
     printf("Initializing hardware...\n");
     pins_init();
 
-    /* ------------------------------ MODEM INIT ----------------------------- */
+
+    printf("Initializing modem UART...\n");
+
+    if (ec200_uart_init() != EC200_OK) {
+        printf("Error initializing UART.\n");
+        return;
+    }
+
+    printf("UART communication established.\n");
+
 
     printf("Powering on and initializing modem...\n");
-    modem_state.modem_communication = modem_init() == EC200_OK;
-    if (!modem_state.modem_communication) {
+
+    if (modem_init() != EC200_OK) {
         gpio_set_level(LED_AUX, 0);
-        printf("Error: Modem did not respond after %d retries.\n", EC200_RETRIES);
+
+        printf(
+            "Error: Modem did not respond after %d retries.\n",
+            EC200_RETRIES
+        );
+
         return;
     }
 
     gpio_set_level(LED_AUX, 1);
-    printf("UART communication established. Checking SIM...\n");
 
-    /* ------------------------------ SIM DETECTION -------------------------- */
+    printf("Modem initialized successfully.\n");
 
-    modem_state.sim_detect = modem_check_sim() == EC200_OK;
-    if (!modem_state.sim_detect) {
+
+    printf("Checking SIM...\n");
+
+    if (modem_check_sim() != EC200_OK) {
         printf("SIM not detected or requires a PIN.\n");
         return;
     }
 
     printf("SIM detected and ready.\n");
 
-    /* ------------------------------ TCP ----------------------------------- */
 
     printf("Opening TCP socket to httpbin.org:80...\n");
-    modem_state.tcp_socket = tcp_open_socket("httpbin.org", 80, TCP_OPEN_TIMEOUT_S * 1000);
 
-    if (modem_state.tcp_socket != EC200_OK) {
+    if (tcp_open_socket(
+            "httpbin.org",
+            80,
+            TCP_OPEN_TIMEOUT_MS) != EC200_OK) {
+
         printf("Error opening TCP socket.\n");
         return;
     }
 
-    modem_state.tcp_socket = true;
     printf("TCP socket opened successfully.\n");
 
-    /* ------------------------------ HTTP REQUEST -------------------------- */
 
     const char payload[] =
         "GET /get HTTP/1.1\r\n"
@@ -75,7 +79,12 @@ void app_main(void)
         "Connection: close\r\n"
         "\r\n";
 
-    if (tcp_send_payload(payload, strlen(payload), TCP_PAYLOAD_TIMEOUT_S * 1000) != EC200_OK) {
+
+    if (tcp_send_payload(
+            payload,
+            strlen(payload),
+            TCP_SEND_TIMEOUT_MS) != EC200_OK) {
+
         printf("Failed sending HTTP request.\n");
         tcp_close_socket();
         return;
@@ -83,46 +92,61 @@ void app_main(void)
 
     printf("HTTP request sent correctly.\n");
 
-    /* ------------------------------ HTTP RESPONSE ------------------------- */
 
     uint8_t response[MAX_TCP_RESPONSE];
     size_t received = 0;
-    int result = tcp_receive(response, sizeof(response), &received, TCP_RECEIVE_TIMEOUT_S * 1000);
+
+    int result = tcp_receive(
+        response,
+        sizeof(response) - 1,
+        &received,
+        TCP_RECEIVE_TIMEOUT_MS
+    );
 
     if (result == EC200_OK) {
-        printf("\n================ HTTP RESPONSE ================\n");
 
-        /*
-         * tcp_receive() guarantees that the buffer is
-         * NULL-terminated, so it can be printed as a string.
-         */
+        response[received] = '\0';
+
+        printf(
+            "\n================ HTTP RESPONSE ================\n"
+        );
+
         printf("%s", response);
-        printf("\n================================================\n");
-        printf("Received %zu bytes.\n", received);
-    }
-    else if (result == EC200_NO_PAYLOAD) {
+
+        printf(
+            "\n================================================\n"
+        );
+
+        printf(
+            "Received %zu bytes.\n",
+            received
+        );
+
+    } else if (result == EC200_NO_PAYLOAD) {
+
         printf("No TCP data available.\n");
-    }
-    else {
+
+    } else {
+
         printf("Failed receiving HTTP response.\n");
     }
 
-    /* ------------------------------ CLOSE --------------------------------- */
 
-    if (tcp_close_socket() == EC200_OK) {
-        modem_state.tcp_socket = false;
+    if (tcp_close_socket() == EC200_OK)
         printf("TCP socket closed successfully.\n");
-    }
-    else {
+    else
         printf("Failed closing TCP socket.\n");
-    }
 
-    /* ------------------------------ LED ----------------------------------- */
 
-    while (true) {
-        led_state = !led_state;
-        gpio_set_level(LED_STA, led_state);
+    while (1) {
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        gpio_set_level(
+            LED_STA,
+            !gpio_get_level(LED_STA)
+        );
+
+        vTaskDelay(
+            pdMS_TO_TICKS(500)
+        );
     }
 }
