@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "EC200_UART.h"
+#include "EC200_MODEM.h"
 
 
 /** @brief TCP configuration */

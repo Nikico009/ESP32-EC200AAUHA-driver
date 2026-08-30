@@ -1,4 +1,4 @@
-#include "EC200_UART.h"
+#include "EC200_MODEM.h"
 
 #include "pins_init.h"
 

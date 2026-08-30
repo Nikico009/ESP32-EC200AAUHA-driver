@@ -1,5 +1,5 @@
-#ifndef EC200_UART_H
-#define EC200_UART_H
+#ifndef EC200_MODEM_H
+#define EC200_MODEM_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -96,4 +96,4 @@ int modem_init(void);
  */
 int modem_check_sim(void);
 
-#endif /* EC200_UART_H */
+#endif /* EC200_MODEM_H */
