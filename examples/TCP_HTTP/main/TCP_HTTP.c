@@ -93,7 +93,7 @@ void app_main(void)
     printf("HTTP request sent correctly.\n");
 
 
-    uint8_t response[MAX_TCP_RESPONSE];
+    static uint8_t response[MAX_TCP_RESPONSE];
     size_t received = 0;
 
     int result = tcp_receive(

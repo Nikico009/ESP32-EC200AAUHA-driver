@@ -3,7 +3,12 @@
 #include "EC200_UART.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+
+#define TCP_QIRD_MAX_LENGTH 1024
+#define TCP_QIRD_OVERHEAD 64
 
 
 /**
@@ -97,7 +102,7 @@ int tcp_open_socket(
 )
 {
     char command[128];
-    char response[MAX_TCP_RESPONSE];
+    static char response[MAX_TCP_RESPONSE];
 
     if (host == NULL)
         return EC200_ERROR;
@@ -206,11 +211,12 @@ int tcp_receive(
 )
 {
     char command[32];
-    char response[MAX_TCP_RESPONSE];
+    static char response[TCP_QIRD_MAX_LENGTH + TCP_QIRD_OVERHEAD];
 
     size_t total_received = 0;
     size_t chunk_received = 0;
     uint32_t elapsed = 0;
+    size_t qird_length;
 
     if (buffer == NULL ||
         received == NULL ||
@@ -219,94 +225,112 @@ int tcp_receive(
 
     *received = 0;
 
+    qird_length = buffer_size;
+
+    if (qird_length > TCP_QIRD_MAX_LENGTH)
+        qird_length = TCP_QIRD_MAX_LENGTH;
+
     snprintf(
         command,
         sizeof(command),
         "AT+QIRD=0,%zu\r\n",
-        buffer_size
+        qird_length
     );
-
-    ec200_uart_flush();
-
-    if (ec200_uart_write(
-            command,
-            strlen(command)) != EC200_OK)
-        return EC200_ERROR;
 
     while (elapsed < timeout_ms) {
 
-        if (total_received >= sizeof(response) - 1)
-            break;
+        total_received = 0;
+        response[0] = '\0';
 
-        int result = ec200_uart_read(
-            response + total_received,
-            sizeof(response) - 1 - total_received,
-            &chunk_received,
-            100
-        );
+        ec200_uart_flush();
 
-        if (result == EC200_OK) {
+        if (ec200_uart_write(
+                command,
+                strlen(command)) != EC200_OK)
+            return EC200_ERROR;
 
-            total_received += chunk_received;
-            response[total_received] = '\0';
+        uint32_t query_elapsed = 0;
 
-            if (strstr(
-                    response,
-                    "\r\nOK\r\n") != NULL)
+        while (query_elapsed < 1000 &&
+               elapsed + query_elapsed < timeout_ms) {
+
+            if (total_received >= sizeof(response) - 1)
                 break;
 
-            if (strstr(
-                    response,
-                    "\r\nERROR\r\n") != NULL)
-                return EC200_ERROR;
+            int result = ec200_uart_read(
+                response + total_received,
+                sizeof(response) - 1 - total_received,
+                &chunk_received,
+                100
+            );
+
+            if (result == EC200_OK) {
+
+                total_received += chunk_received;
+                response[total_received] = '\0';
+
+                if (total_received >= 6 &&
+                    strstr(response + total_received - 6, "\r\nOK\r\n") != NULL)
+                    break;
+
+                if (total_received >= 9 &&
+                    strstr(response + total_received - 9, "\r\nERROR\r\n") != NULL)
+                    return EC200_ERROR;
+            }
+
+            query_elapsed += 100;
         }
 
-        elapsed += 100;
+        char *header = strstr(response, "+QIRD:");
+
+        if (header != NULL) {
+            char *header_end = strstr(header, "\r\n");
+
+            if (header_end == NULL)
+                return EC200_ERROR;
+
+            *header_end = '\0';
+
+            char *length_text = strchr(header, ':');
+
+            if (length_text == NULL)
+                return EC200_ERROR;
+
+            length_text++;
+
+            while (*length_text == ' ')
+                length_text++;
+
+            char *separator = strchr(length_text, ',');
+
+            if (separator != NULL)
+                length_text = separator + 1;
+
+            size_t data_length = strtoul(length_text, NULL, 10);
+            char *data_start = header_end + 2;
+
+            if (data_length > 0) {
+                if ((size_t)(data_start - response) > total_received ||
+                    data_length > total_received - (size_t)(data_start - response))
+                    return EC200_ERROR;
+
+                if (data_length > buffer_size)
+                    data_length = buffer_size;
+
+                memcpy(buffer, data_start, data_length);
+                *received = data_length;
+                return EC200_OK;
+            }
+        } else if (strstr(response, "ERROR") != NULL ||
+                   strstr(response, "+CME ERROR:") != NULL) {
+            printf("QIRD modem response: %s\n", response);
+            return EC200_ERROR;
+        }
+
+        elapsed += query_elapsed;
     }
 
-    response[total_received] = '\0';
-
-    char *header = strstr(
-        response,
-        "+QIRD:"
-    );
-
-    if (header == NULL)
-        return EC200_NO_PAYLOAD;
-
-    size_t data_length = 0;
-
-    if (sscanf(
-            header,
-            "+QIRD: %zu",
-            &data_length) != 1)
-        return EC200_ERROR;
-
-    if (data_length == 0)
-        return EC200_NO_PAYLOAD;
-
-    char *data_start = strchr(
-        header,
-        '\n'
-    );
-
-    if (data_start == NULL)
-        return EC200_ERROR;
-
-    data_start++;
-
-    if (data_length > buffer_size)
-        data_length = buffer_size;
-
-    memcpy(
-        buffer,
-        data_start,
-        data_length
-    );
-
-    *received = data_length;
-
-    return EC200_OK;
+    return EC200_NO_PAYLOAD;
 }
 
 
