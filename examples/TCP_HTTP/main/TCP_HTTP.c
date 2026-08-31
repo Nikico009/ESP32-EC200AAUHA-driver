@@ -139,14 +139,8 @@ void app_main(void)
 
 
     while (1) {
-
-        gpio_set_level(
-            LED_STA,
-            !gpio_get_level(LED_STA)
-        );
-
-        vTaskDelay(
-            pdMS_TO_TICKS(500)
-        );
+        led_state = !led_state;
+        gpio_set_level(LED_STA, led_state);
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
