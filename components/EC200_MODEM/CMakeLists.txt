@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "EC200_MODEM.c"
     INCLUDE_DIRS "include"
-    REQUIRES driver esp_driver_uart esp_driver_gpio freertos pins_init
+    REQUIRES driver esp_driver_uart esp_driver_gpio freertos pins_init esp_timer
 )

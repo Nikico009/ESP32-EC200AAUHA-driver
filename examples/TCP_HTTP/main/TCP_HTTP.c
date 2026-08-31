@@ -17,6 +17,8 @@
 
 void app_main(void)
 {
+    bool led_state = false;
+
     printf("Initializing hardware...\n");
     pins_init();
 
