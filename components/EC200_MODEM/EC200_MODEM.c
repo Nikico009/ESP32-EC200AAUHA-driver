@@ -19,11 +19,10 @@
 
 #define MODEM_AT_TIMEOUT_MS        1000
 #define MODEM_SIM_TIMEOUT_MS       2000
-#define MODEM_NETWORK_QUERY_MS     2000
-
 #define MODEM_POWER_ON_DELAY_MS    500
 #define MODEM_POWER_KEY_MS         1000
-#define MODEM_BOOT_TIMEOUT_MS      10000
+#define MODEM_BOOT_DELAY_MS        5000
+#define MODEM_RETRY_DELAY_MS       1000
 
 
 /**
@@ -183,16 +182,6 @@ int ec200_uart_flush(void) {
 
 
 /**
- * @brief Deinitialize the modem UART.
- */
-int ec200_uart_deinit(void) {
-    uart_driver_delete(MODEM_UART_PORT);
-
-    return EC200_OK;
-}
-
-
-/**
  * @brief Wait for a specific response from the modem.
  */
 int modem_wait_response(const char *expected, char *response, size_t response_size, uint32_t timeout_ms) {
@@ -294,30 +283,24 @@ int modem_send_command(const char *command, char *response, size_t response_size
 int modem_init(void) {
     char response[128];
 
-    /* EC200 power-on sequence is typically active-low on PWR_KEY.
-     * Keep the signal idle high and generate a low pulse for ~1s. */
+    /* Standard EC200 power-up sequence:
+     * 1) enable the modem rail,
+     * 2) wait ~500 ms,
+     * 3) drive PWR_KEY low for ~1 s,
+    * 4) release it and wait for the modem boot sequence to complete.
+     * This matches the common Quectel startup pattern used on EVBs.
+     */
     gpio_set_level(MDM_EN, 1);
 
     vTaskDelay(pdMS_TO_TICKS(MODEM_POWER_ON_DELAY_MS));
 
-    gpio_set_level(PWR_KEY, 1);
-    vTaskDelay(pdMS_TO_TICKS(50));
-
     gpio_set_level(PWR_KEY, 0);
-
     vTaskDelay(pdMS_TO_TICKS(MODEM_POWER_KEY_MS));
-
     gpio_set_level(PWR_KEY, 1);
 
-    uint64_t start_time = modem_get_time_ms();
+    vTaskDelay(pdMS_TO_TICKS(MODEM_BOOT_DELAY_MS));
 
     for (int retry = 0; retry < EC200_RETRIES; retry++) {
-        if (modem_get_time_ms() - start_time >= MODEM_BOOT_TIMEOUT_MS) {
-            break;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-
         if (modem_send_command(
                 "AT",
                 response,
@@ -326,11 +309,14 @@ int modem_init(void) {
             ) == EC200_OK) {
             return EC200_OK;
         }
+
+        if (retry + 1 < EC200_RETRIES) {
+            vTaskDelay(pdMS_TO_TICKS(MODEM_RETRY_DELAY_MS));
+        }
     }
 
     return EC200_ERROR;
 }
-
 
 /**
  * @brief Check whether the SIM card is detected and ready.
@@ -350,13 +336,10 @@ int modem_check_sim(void) {
                 return EC200_OK;
             }
 
-            if (strstr(response, "+CPIN: SIM PIN") != NULL ||
-                strstr(response, "+CPIN: SIM PUK") != NULL ||
-                strstr(response, "+CPIN: PH_SIM PIN") != NULL ||
-                strstr(response, "+CPIN: PH_SIM PUK") != NULL ||
-                strstr(response, "+CPIN: NOT READY") != NULL ||
-                strstr(response, "+CME ERROR: 10") != NULL ||
+            if (strstr(response, "+CME ERROR: 10") != NULL ||
                 strstr(response, "+CME ERROR: 11") != NULL ||
+                strstr(response, "+CPIN: SIM PIN") != NULL ||
+                strstr(response, "+CPIN: SIM PUK") != NULL ||
                 strstr(response, "NO SIM") != NULL ||
                 strstr(response, "NOT INSERTED") != NULL) {
                 return EC200_ERROR;
@@ -369,196 +352,3 @@ int modem_check_sim(void) {
     return EC200_ERROR;
 }
 
-
-/**
- * @brief Wait until the modem is registered on the cellular network.
- */
-int modem_wait_network(uint32_t timeout_ms) {
-    char response[256];
-
-    uint64_t start_time = modem_get_time_ms();
-
-    while (1) {
-        uint64_t elapsed = modem_get_time_ms() - start_time;
-
-        if (elapsed >= timeout_ms) {
-            return EC200_ERROR;
-        }
-
-        uint32_t remaining = timeout_ms - (uint32_t)elapsed;
-        uint32_t query_timeout = MODEM_NETWORK_QUERY_MS;
-
-        if (query_timeout > remaining) {
-            query_timeout = remaining;
-        }
-
-        if (modem_send_command(
-                "AT+CEREG?",
-                response,
-                sizeof(response),
-                query_timeout
-            ) == EC200_OK) {
-
-            char *cereg = strstr(response, "+CEREG:");
-
-            if (cereg != NULL) {
-                int n;
-                int status;
-
-                if (sscanf(cereg, "+CEREG: %d,%d", &n, &status) == 2) {
-                    if (status == 1 || status == 5) {
-                        return EC200_OK;
-                    }
-                }
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-
-
-/**
- * @brief Configure the PDP context with an APN.
- */
-int modem_configure_apn(const char *apn) {
-    if (apn == NULL || apn[0] == '\0') {
-        return EC200_ERROR;
-    }
-
-    char command[256];
-    char response[128];
-
-    int length = snprintf(
-        command,
-        sizeof(command),
-        "AT+QICSGP=%d,1,\"%s\",\"\",\"\",0",
-        EC200_PDP_CONTEXT_ID,
-        apn
-    );
-
-    if (length < 0 || (size_t)length >= sizeof(command)) {
-        return EC200_ERROR;
-    }
-
-    if (modem_send_command(
-            command,
-            response,
-            sizeof(response),
-            2000
-        ) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    return EC200_OK;
-}
-
-
-/**
- * @brief Activate the configured PDP context.
- */
-int modem_activate_pdp(uint32_t timeout_ms) {
-    char command[64];
-    char response[256];
-
-    snprintf(
-        command,
-        sizeof(command),
-        "AT+QIACT=%d",
-        EC200_PDP_CONTEXT_ID
-    );
-
-    if (modem_send_command(
-            command,
-            response,
-            sizeof(response),
-            timeout_ms
-        ) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    return modem_check_pdp();
-}
-
-
-/**
- * @brief Check whether the PDP context is active.
- */
-int modem_check_pdp(void) {
-    char response[512];
-    char expected[32];
-
-    if (modem_send_command(
-            "AT+QIACT?",
-            response,
-            sizeof(response),
-            2000
-        ) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    snprintf(
-        expected,
-        sizeof(expected),
-        "+QIACT: %d,",
-        EC200_PDP_CONTEXT_ID
-    );
-
-    if (strstr(response, expected) == NULL) {
-        return EC200_ERROR;
-    }
-
-    return EC200_OK;
-}
-
-
-/**
- * @brief Establish the complete cellular data connection.
- */
-int modem_connect_network(const char *apn, uint32_t timeout_ms) {
-    if (apn == NULL || apn[0] == '\0') {
-        return EC200_ERROR;
-    }
-
-    uint64_t start_time = modem_get_time_ms();
-
-    if (modem_check_sim() != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    uint64_t elapsed = modem_get_time_ms() - start_time;
-
-    if (elapsed >= timeout_ms) {
-        return EC200_ERROR;
-    }
-
-    if (modem_wait_network(
-            timeout_ms - (uint32_t)elapsed
-        ) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    elapsed = modem_get_time_ms() - start_time;
-
-    if (elapsed >= timeout_ms) {
-        return EC200_ERROR;
-    }
-
-    if (modem_configure_apn(apn) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    elapsed = modem_get_time_ms() - start_time;
-
-    if (elapsed >= timeout_ms) {
-        return EC200_ERROR;
-    }
-
-    if (modem_activate_pdp(
-            timeout_ms - (uint32_t)elapsed
-        ) != EC200_OK) {
-        return EC200_ERROR;
-    }
-
-    return EC200_OK;
-}

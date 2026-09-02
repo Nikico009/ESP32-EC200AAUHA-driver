@@ -14,11 +14,6 @@
 #define EC200_RETRIES              10
 
 
-/** @brief PDP context configuration */
-
-#define EC200_PDP_CONTEXT_ID       1
-
-
 /** @brief Return codes */
 
 #define EC200_OK            0
@@ -66,14 +61,6 @@ int ec200_uart_read(void *buffer, size_t buffer_size, size_t *received, uint32_t
  * @return EC200_OK on success, otherwise EC200_ERROR.
  */
 int ec200_uart_flush(void);
-
-
-/**
- * @brief Deinitialize the modem UART.
- *
- * @return EC200_OK on success, otherwise EC200_ERROR.
- */
-int ec200_uart_deinit(void);
 
 
 /**
@@ -127,63 +114,5 @@ int modem_init(void);
  */
 int modem_check_sim(void);
 
-
-/**
- * @brief Wait until the modem is registered on the cellular network.
- *
- * The function accepts both home-network registration and
- * roaming registration as successful states.
- *
- * @param timeout_ms Maximum time to wait for registration.
- *
- * @return EC200_OK when the modem is registered,
- *         otherwise EC200_ERROR.
- */
-int modem_wait_network(uint32_t timeout_ms);
-
-
-/**
- * @brief Configure the PDP context with an APN.
- *
- * @param apn Access Point Name provided by the operator.
- *
- * @return EC200_OK on success, otherwise EC200_ERROR.
- */
-int modem_configure_apn(const char *apn);
-
-
-/**
- * @brief Activate the configured PDP context.
- *
- * @param timeout_ms Maximum time to wait for activation.
- *
- * @return EC200_OK when the PDP context is active,
- *         otherwise EC200_ERROR.
- */
-int modem_activate_pdp(uint32_t timeout_ms);
-
-
-/**
- * @brief Check whether the PDP context is active.
- *
- * @return EC200_OK when the PDP context is active,
- *         otherwise EC200_ERROR.
- */
-int modem_check_pdp(void);
-
-
-/**
- * @brief Establish the complete cellular data connection.
- *
- * The function checks the SIM, waits for network registration,
- * configures the APN and activates the PDP context.
- *
- * @param apn Access Point Name provided by the operator.
- * @param timeout_ms Maximum total time for the operation.
- *
- * @return EC200_OK when the data connection is established,
- *         otherwise EC200_ERROR.
- */
-int modem_connect_network(const char *apn, uint32_t timeout_ms);
 
 #endif /* EC200_MODEM_H */

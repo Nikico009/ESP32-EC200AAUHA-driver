@@ -27,7 +27,6 @@ int tcp_open_socket(const char *host, int port, uint32_t timeout_ms) {
 
     char command[256];
     char response[512];
-    char expected[32];
 
     int length = snprintf(
         command,
@@ -59,18 +58,16 @@ int tcp_open_socket(const char *host, int port, uint32_t timeout_ms) {
         return EC200_ERROR;
     }
 
-    snprintf(
-        expected,
-        sizeof(expected),
-        "+QIOPEN: %d,0",
-        TCP_SOCKET_ID
-    );
+    int socket_id = -1;
+    int status = -1;
 
-    if (strstr(response, expected) == NULL) {
-        return EC200_ERROR;
+    if (sscanf(response, "%*[^:]: %d,%d", &socket_id, &status) == 2) {
+        if (socket_id == TCP_SOCKET_ID && status == 0) {
+            return EC200_OK;
+        }
     }
 
-    return EC200_OK;
+    return EC200_ERROR;
 }
 
 
