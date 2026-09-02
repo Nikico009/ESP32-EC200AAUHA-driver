@@ -37,10 +37,7 @@ int ec200_uart_init(void);
  *
  * @return EC200_OK on success, otherwise EC200_ERROR.
  */
-int ec200_uart_write(
-    const void *data,
-    size_t length
-);
+int ec200_uart_write(const void *data, size_t length);
 
 
 /**
@@ -49,18 +46,13 @@ int ec200_uart_write(
  * @param buffer Destination buffer.
  * @param buffer_size Buffer size.
  * @param received Number of bytes received.
- * @param timeout_ms Timeout in milliseconds.
+ * @param timeout_ms Maximum time to wait for data.
  *
  * @return EC200_OK on success,
  *         EC200_UART_TIMEOUT on timeout,
  *         otherwise EC200_ERROR.
  */
-int ec200_uart_read(
-    void *buffer,
-    size_t buffer_size,
-    size_t *received,
-    uint32_t timeout_ms
-);
+int ec200_uart_read(void *buffer, size_t buffer_size, size_t *received, uint32_t timeout_ms);
 
 
 /**
@@ -72,11 +64,37 @@ int ec200_uart_flush(void);
 
 
 /**
- * @brief Deinitialize the modem UART.
+ * @brief Wait for a specific response from the modem.
  *
- * @return EC200_OK on success, otherwise EC200_ERROR.
+ * The received modem data is stored in the supplied buffer.
+ *
+ * @param expected String that must be detected in the response.
+ * @param response Buffer where the response is stored.
+ * @param response_size Response buffer size.
+ * @param timeout_ms Maximum time to wait.
+ *
+ * @return EC200_OK when the expected response is received,
+ *         EC200_UART_TIMEOUT when the timeout expires,
+ *         otherwise EC200_ERROR.
  */
-int ec200_uart_deinit(void);
+int modem_wait_response(const char *expected, char *response, size_t response_size, uint32_t timeout_ms);
+
+
+/**
+ * @brief Send an AT command and wait for an OK response.
+ *
+ * The command must not contain the final "\r\n".
+ *
+ * @param command AT command to send.
+ * @param response Buffer where the modem response is stored.
+ * @param response_size Response buffer size.
+ * @param timeout_ms Maximum time to wait.
+ *
+ * @return EC200_OK when the modem returns OK,
+ *         EC200_UART_TIMEOUT on timeout,
+ *         otherwise EC200_ERROR.
+ */
+int modem_send_command(const char *command, char *response, size_t response_size, uint32_t timeout_ms);
 
 
 /**
@@ -95,5 +113,6 @@ int modem_init(void);
  *         otherwise EC200_ERROR.
  */
 int modem_check_sim(void);
+
 
 #endif /* EC200_MODEM_H */
